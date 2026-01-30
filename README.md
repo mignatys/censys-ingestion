@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Demo: <a href='censys.miglabs.org'>censys.miglabs.org</a>
+Demo: <a href='http://ensys.miglabs.org'>censys.miglabs.org</a>
 
 This project is a resilient, containerized service designed to ingest, enrich, and store security alerts from a third-party API. It demonstrates robust error handling, database-driven configuration, and observability via a custom dashboard.
 
