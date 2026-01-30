@@ -17,14 +17,14 @@ st.sidebar.header("System Configuration")
 
 # Fetch Current Config
 current_failure = 0.2
-current_interval = 5
+current_interval = 30
 
 try:
     # Fetch Ingestor Config
     config_resp = requests.get(f"{INGESTOR_URL}/config", timeout=1)
     if config_resp.status_code == 200:
         c = config_resp.json()
-        current_interval = c.get("sync_interval_minutes", 5)
+        current_interval = c.get("sync_interval_minutes", 30)
 
     # Fetch Mock API Config
     try:

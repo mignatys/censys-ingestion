@@ -34,7 +34,6 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres/ingestion_db
       - UPSTREAM_URL=http://mock-api:8000
-      - SYNC_INTERVAL_MINUTES=5
       - PYTHONUNBUFFERED=1
 
   dashboard:

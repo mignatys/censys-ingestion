@@ -9,7 +9,7 @@ from typing import List, Optional
 import httpx
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Depends
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select, text
+from sqlalchemy import select, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ingestion_service.database import get_db, engine, AsyncSessionLocal
@@ -34,9 +34,19 @@ async def run_sync_task(source: str = "scheduled"):
     """Unified wrapper for running sync tasks (scheduled or manual)."""
     logger.info(f"Running sync task... Source: {source}")
     try:
+        # Simple Retention Policy: Clean up before sync
+        async with AsyncSessionLocal() as session:
+             async with session.begin():
+                 cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+                 stmt = delete(Alert).where(Alert.ingested_at < cutoff)
+                 await session.execute(stmt)
+                 logger.info(f"Pre-sync cleanup: Removed alerts older than 48h ({cutoff})")
+
         await ingestor.sync()
     except Exception as e:
         logger.error(f"Sync task failed (Source: {source}): {e}")
+
+
 
 async def apply_config(config: SystemConfig):
     """Sync config to Scheduler and Mock API."""
@@ -68,7 +78,7 @@ async def lifespan(app: FastAPI):
             config = res.scalars().first()
             if not config:
                 logger.info("No config found, creating default.")
-                config = SystemConfig(sync_interval_minutes=5)
+                config = SystemConfig(sync_interval_minutes=30)
                 session.add(config)
                 await session.flush()
             
@@ -201,7 +211,6 @@ async def get_alerts(
         query = query.where(Alert.country == country)
         
     if criticality:
-        # Case insensitive match might be nice, but stick to exact for now or lower()
         # The DB stores "low", "medium", "high", "critical" (lowercase)
         query = query.where(Alert.severity == criticality.lower())
         
