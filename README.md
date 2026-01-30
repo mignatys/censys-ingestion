@@ -86,7 +86,7 @@ This project is a resilient, containerized service designed to ingest, enrich, a
 4.  **Demo Flow:**
     *   Open the **Dashboard**.
     *   Observe the "Service Health" metrics (Syncs every 30 mins by default).
-    *   Use the **Chaos Engineering** sidebar to increase the "Failure Probability" to `1.0`.
+    *   Use the **Chaos Engineering** sidebar to increase the "Failure Probability" to `1.0`. Click "Apply Configuration"
     *   Click "Trigger Sync Now" or wait for the schedule.
     *   Observe the **Error** message appearing in Red on the dashboard.
     *   Reset failure rate to `0.0` and sync again to clear the error.
@@ -97,6 +97,6 @@ This project is a resilient, containerized service designed to ingest, enrich, a
     *   Observe the **Retrying** message appearing in Yellow on the dashboard.
     *   Reset failure rate to `0.0` and sync again to clear the error.
 
-    *   Use data filters to search for alerts by country, user, or severity.
+    *   Use data filters to filter alerts by country, user, or severity.
     *   Adjust the **Time Window** to 6 or 24 hours
     *   Observe the **Alerts** metrics on the dashboard change.
