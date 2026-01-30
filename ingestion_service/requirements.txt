@@ -1,0 +1,9 @@
+sqlalchemy
+asyncpg
+pydantic
+fastapi
+tenacity
+httpx
+ijson
+APScheduler
+uvicorn
