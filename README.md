@@ -12,7 +12,9 @@ This project is a resilient, containerized service designed to ingest, enrich, a
 
 ### 1. Ingestion Engine
 *   **Resilient Fetching:** Periodically polls the upstream API. Implements incremental syncing using a persistent `last_event_time` bookmark, ensuring no data is lost even after restarts.
+*   **Memory Efficient** The ingestion pipeline is built around a producer thread and a size-limited queue, paired with an asynchronous consumer. Alerts are processed as a stream rather than buffered in bulk, providing natural backpressure and preventing unbounded memory growth. Batch processing vs individual message reduces interpreter context switch by 99%
 *   **Robustness:** Uses `tenacity` for exponential backoff and retry logic on temporary failures. (3 attempts)
+*   **DB Batch Processing** Events are written to the database in batches, with the event bookmark advanced incrementally. This improves database throughput and resilience by limiting transaction scope, rather than processing the entire request in a single transaction that must be rolled back on partial failure.
 *   **Normalization:** Converts raw upstream alerts into a standardized `Alert` model. (Usign different adapter based on the source field)
 *   **Enrichment:**
     *   **GeoIP:** Assign country code to destination IP (randomly selected from a list of countries).
