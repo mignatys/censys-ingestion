@@ -2,6 +2,8 @@
 
 ## Project Overview
 
+Demo: <a href='http://censys.miglabs.org'>censys.miglabs.org</a>
+
 This project is a resilient, containerized service designed to ingest, enrich, and store security alerts from a third-party API. It demonstrates robust error handling, database-driven configuration, and observability via a custom dashboard.
 
 > **Note:** For this demo, I took the liberty to modify the data returned by the Mock API to contain `src_ip` and `dst_ip` fields. This simulates a blocked connection from an internal network to an outside resource. We then enrich this data with **Geolocation** (of the destination IP) and **User Context** (based on source). This small change creates a more realistic security scenario for the demo.
@@ -10,7 +12,9 @@ This project is a resilient, containerized service designed to ingest, enrich, a
 
 ### 1. Ingestion Engine
 *   **Resilient Fetching:** Periodically polls the upstream API. Implements incremental syncing using a persistent `last_event_time` bookmark, ensuring no data is lost even after restarts.
+*   **Memory Efficient** The ingestion pipeline is built around a producer thread and a size-limited queue, paired with an asynchronous consumer. Alerts are processed as a stream rather than buffered in bulk, providing natural backpressure and preventing unbounded memory growth. Batch processing vs individual message reduces interpreter context switch by 99%
 *   **Robustness:** Uses `tenacity` for exponential backoff and retry logic on temporary failures. (3 attempts)
+*   **DB Batch Processing** Events are written to the database in batches, with the event bookmark advanced incrementally. This improves database throughput and resilience by limiting transaction scope, rather than processing the entire request in a single transaction that must be rolled back on partial failure.
 *   **Normalization:** Converts raw upstream alerts into a standardized `Alert` model. (Usign different adapter based on the source field)
 *   **Enrichment:**
     *   **GeoIP:** Assign country code to destination IP (randomly selected from a list of countries).
@@ -82,7 +86,7 @@ This project is a resilient, containerized service designed to ingest, enrich, a
 4.  **Demo Flow:**
     *   Open the **Dashboard**.
     *   Observe the "Service Health" metrics (Syncs every 30 mins by default).
-    *   Use the **Chaos Engineering** sidebar to increase the "Failure Probability" to `1.0`.
+    *   Use the **Chaos Engineering** sidebar to increase the "Failure Probability" to `1.0`. Click "Apply Configuration"
     *   Click "Trigger Sync Now" or wait for the schedule.
     *   Observe the **Error** message appearing in Red on the dashboard.
     *   Reset failure rate to `0.0` and sync again to clear the error.
@@ -93,6 +97,6 @@ This project is a resilient, containerized service designed to ingest, enrich, a
     *   Observe the **Retrying** message appearing in Yellow on the dashboard.
     *   Reset failure rate to `0.0` and sync again to clear the error.
 
-    *   Use data filters to search for alerts by country, user, or severity.
+    *   Use data filters to filter alerts by country, user, or severity.
     *   Adjust the **Time Window** to 6 or 24 hours
     *   Observe the **Alerts** metrics on the dashboard change.
