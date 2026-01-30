@@ -23,14 +23,11 @@ from ingestion_service.database import (
 from ingestion_service.models import Alert, ServiceState
 from ingestion_service.schemas import AlertBase, AlertEnriched, AlertLegacy
 from ingestion_service.normalization import registry
+from enum import Enum
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-
-from enum import Enum
 
 class IngestionStatus(str, Enum):
     IDLE = "idle"
@@ -94,7 +91,6 @@ class AlertIngestor:
         # Queue for passing items from thread to async loop
         queue = asyncio.Queue(maxsize=1000)
         loop = asyncio.get_event_loop()
-        
         
         # Exception container to propagate errors from thread
         thread_error = []

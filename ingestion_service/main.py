@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 
+
 app = FastAPI(title="Ingestion Service", lifespan=lifespan)
 
 @app.get("/health")
@@ -155,6 +156,8 @@ async def get_config(db: AsyncSession = Depends(get_db)):
     return {
         "sync_interval_minutes": config.sync_interval_minutes
     }
+
+
 
 @app.post("/config")
 async def update_config(update: ConfigUpdate, db: AsyncSession = Depends(get_db)):
