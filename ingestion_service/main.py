@@ -12,7 +12,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ingestion_service.database import get_db, engine, AsyncSessionLocal
+from ingestion_service.database import (
+    get_db, engine, AsyncSessionLocal,
+    get_system_config, ensure_system_config, update_system_config,
+    get_service_state, delete_old_alerts, get_alerts_filtered
+)
 from ingestion_service.models import ServiceState, Alert, SystemConfig, Base
 from ingestion_service.schemas import AlertEnriched, ConfigUpdate
 from ingestion_service.ingestor import AlertIngestor, IngestionStatus
@@ -38,8 +42,7 @@ async def run_sync_task(source: str = "scheduled"):
         async with AsyncSessionLocal() as session:
              async with session.begin():
                  cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
-                 stmt = delete(Alert).where(Alert.ingested_at < cutoff)
-                 await session.execute(stmt)
+                 await delete_old_alerts(session, cutoff)
                  logger.info(f"Pre-sync cleanup: Removed alerts older than 48h ({cutoff})")
 
         await ingestor.sync()
@@ -74,13 +77,7 @@ async def lifespan(app: FastAPI):
     # Load and Apply Config
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            res = await session.execute(select(SystemConfig).limit(1))
-            config = res.scalars().first()
-            if not config:
-                logger.info("No config found, creating default.")
-                config = SystemConfig(sync_interval_minutes=30)
-                session.add(config)
-                await session.flush()
+            config = await ensure_system_config(session, default_interval=30)
             
             logger.info(f"Applying Config: Interval={config.sync_interval_minutes}")
             await apply_config(config)
@@ -107,14 +104,14 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     
     try:
         # Check DB & Sync State in one go
-        result = await db.execute(select(ServiceState).limit(1))
-        state = result.scalars().first()
+        state = await get_service_state(db)
         
         response["db_status"] = "Connected"
         
         if state:
             response["last_sync"] = state.last_sync_time
             response["last_success"] = state.last_success_time
+            response["last_event_time"] = state.last_event_time
             
             # DB State determines "system_status" unless in-memory is 'retrying' (transient visibility)
             if ingestor.status == IngestionStatus.RETRYING:
@@ -153,10 +150,7 @@ async def trigger_sync(background_tasks: BackgroundTasks):
 @app.get("/config")
 async def get_config(db: AsyncSession = Depends(get_db)):
     """Retrieve current system configuration."""
-    result = await db.execute(select(SystemConfig).limit(1))
-    config = result.scalars().first()
-    if not config:
-        config = SystemConfig(sync_interval_minutes=5)
+    config = await ensure_system_config(db)
     return {
         "sync_interval_minutes": config.sync_interval_minutes
     }
@@ -165,15 +159,7 @@ async def get_config(db: AsyncSession = Depends(get_db)):
 async def update_config(update: ConfigUpdate, db: AsyncSession = Depends(get_db)):
     """Update and apply system configuration."""
     # Upsert
-    result = await db.execute(select(SystemConfig).limit(1))
-    config = result.scalars().first()
-    if not config:
-         config = SystemConfig()
-         db.add(config)
-    
-    config.sync_interval_minutes = update.sync_interval_minutes
-    await db.commit()
-    await db.refresh(config)
+    config = await update_system_config(db, update.sync_interval_minutes)
     
     # Apply changes
     await apply_config(config)
@@ -196,26 +182,14 @@ async def get_alerts(
     """
     Retrieve alerts from the database with filtering.
     """
-    # Base Query
-    query = select(Alert).limit(limit).order_by(Alert.ingested_at.desc())
-    
-    # Time Filter (Default 1 hour)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    query = query.where(Alert.ingested_at >= cutoff)
-
-    # Optional Filters
-    if user:
-        query = query.where(Alert.user == user)
-    
-    if country:
-        query = query.where(Alert.country == country)
-        
-    if criticality:
-        # The DB stores "low", "medium", "high", "critical" (lowercase)
-        query = query.where(Alert.severity == criticality.lower())
-        
-    result = await db.execute(query)
-    alerts = result.scalars().all()
+    alerts = await get_alerts_filtered(
+        db, 
+        limit=limit, 
+        hours=hours, 
+        user=user, 
+        country=country, 
+        criticality=criticality
+    )
     
     # Helper to convert ORM objects to Pydantic (AlertEnriched expects 'id' but model has 'alert_id')
     # Use list comprehension with mapping

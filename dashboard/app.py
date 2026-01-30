@@ -98,32 +98,28 @@ try:
     # status = health_data.get("status", "Unknown") # Removed
     last_sync = health_data.get("last_sync", "Never")
     last_success = health_data.get("last_success", "Never")
+    last_event = health_data.get("last_event_time", "Never")
     db_status = health_data.get("db_status", "Unknown")
     system_status = health_data.get("system_status", "Unknown")
-    # ingestor_status = health_data.get("ingestor_status", "idle") # Removed, merged into system_status
     
-    # Format Date
-    if last_sync and last_sync != "Never":
-        try:
-             # Parse ISO format (e.g. 2026-01-28T18:24:31.123456+00:00)
-             dt = pd.to_datetime(last_sync)
-             # Format as Human Readable Date Space Time (YYYY-MM-DD HH:MM:SS)
-             last_sync = dt.strftime('%Y-%m-%d %H:%M:%S')
-        except:
-             pass # Keep original if parse fails
-    
-    # Format Last Success
-    if last_success and last_success != "Never":
-        try:
-             # Parse ISO format (e.g. 2026-01-28T18:24:31.123456+00:00)
-             dt = pd.to_datetime(last_success)
-             # Format as Human Readable Date Space Time (YYYY-MM-DD HH:MM:SS)
-             last_success = dt.strftime('%Y-%m-%d %H:%M:%S')
-        except:
-             pass # Keep original if parse fails
+    # helper for date formatting
+    def format_ts(ts):
+        if ts and ts != "Never":
+            try:
+                dt = pd.to_datetime(ts)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                return ts
+        return "Never"
+
+    last_sync = format_ts(last_sync)
+    last_success = format_ts(last_success)
+    last_event = format_ts(last_event)
     
     # Ingestor Status merged into system_status
     # System Status Logic (Left Column)
+    col1, col2, col3 = st.columns(3)
+    
     with col1:
         if system_status == "retrying":
              st.warning(f"**System Status:** Retrying (Transient Error)...")
@@ -139,8 +135,11 @@ try:
         st.metric("DB Connection", str(db_status))
             
     with col2:
-        st.metric("Last Sync Time", str(last_sync))
+        st.metric("Last Sync Execution", str(last_sync))
         st.metric("Last Successful Sync", str(last_success))
+
+    with col3:
+        st.metric("Last Event Bookmark", str(last_event))
 
 except Exception as e:
     st.error(f"Cannot reach Ingestion Service: {e}")

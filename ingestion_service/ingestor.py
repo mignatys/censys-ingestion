@@ -9,12 +9,17 @@ from typing import List, Optional, AsyncGenerator
 import httpx
 import ijson
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
-from ingestion_service.database import AsyncSessionLocal
+from ingestion_service.database import (
+    AsyncSessionLocal, 
+    ensure_service_state, 
+    update_service_state, 
+    insert_alerts_batch
+)
 from ingestion_service.models import Alert, ServiceState
 from ingestion_service.schemas import AlertBase, AlertEnriched, AlertLegacy
 from ingestion_service.normalization import registry
@@ -191,32 +196,31 @@ class AlertIngestor:
         before_sleep=_before_sleep
     )
     async def sync(self):
-        """Execute the sync process with incremental checkpoints."""
+        """Execute the sync process with incremental bookmark."""
         self.status = IngestionStatus.SYNCING
         
         async with AsyncSessionLocal() as session:
-            # 1. Get or Init State (Initial Transaction)
+            # 1. Get last_event_time from ServiceState (Data High Water Mark)
             async with session.begin():
-                result = await session.execute(select(ServiceState).limit(1))
-                state = result.scalars().first()
-                if not state:
-                    state = ServiceState(last_sync_time=datetime.now(timezone.utc) - timedelta(hours=24))
-                    session.add(state)
-                last_sync_time = state.last_sync_time
+                state = await ensure_service_state(session)
                 
-                # Update Start State
-                state.current_status = "syncing"
+                last_event_time = state.last_event_time
+
+                # Update Start State (Mark as running NOW)
+                await update_service_state(session, current_status="syncing", last_sync_time=datetime.now(timezone.utc))
             
-            logger.info(f"Starting sync from {last_sync_time}")
+            logger.info(f"Starting sync from bookmark: {last_event_time}")
 
             alert_payloads = []
             BATCH_SIZE = 100
             total_synced = 0
-            latest_batch_time = last_sync_time
+            
+            # Track high-water mark for this run
+            current_batch_high_water = last_event_time
 
             try:
                 # 2. Fetch Alerts (Stream)
-                async for raw_item in self.fetch_alerts(since=last_sync_time):
+                async for raw_item in self.fetch_alerts(since=last_event_time):
                     # 3. Process (Normalize & Enrich)
                     norm = self._normalize_item(raw_item)
                     if not norm:
@@ -229,29 +233,26 @@ class AlertIngestor:
                     alert_dict['ingested_at'] = datetime.now(timezone.utc)
                     alert_payloads.append(alert_dict)
                     
-                    # Track high-water mark from stream data
-                    if enriched.created_at and (latest_batch_time is None or enriched.created_at > latest_batch_time):
-                        latest_batch_time = enriched.created_at
+                    # Track high-water mark from stream data for logging
+                    if enriched.created_at and (current_batch_high_water is None or enriched.created_at > current_batch_high_water):
+                        current_batch_high_water = enriched.created_at
 
-                    # Bulk Insert Batch & Checkpoint
+                    # Bulk Insert Batch
                     if len(alert_payloads) >= BATCH_SIZE:
-                        await self._process_batch(session, alert_payloads, latest_batch_time)
+                        # Update DB with new high-water mark
+                        await self._process_batch(session, alert_payloads, current_batch_high_water)
                         total_synced += len(alert_payloads)
                         alert_payloads.clear() # Clear memory
                 
                 # Insert remaining
                 if alert_payloads:
-                    await self._process_batch(session, alert_payloads, latest_batch_time)
+                    await self._process_batch(session, alert_payloads, current_batch_high_water)
                     total_synced += len(alert_payloads)
                     alert_payloads.clear()
 
-                # Update Final Idle State
-                await session.execute(
-                    update(ServiceState).values(
-                        current_status="idle",
-                        last_success_time=datetime.now(timezone.utc)
-                    )
-                )
+                # Update Final Success State
+                await update_service_state(session, current_status="idle", last_success_time=datetime.now(timezone.utc),
+                                           last_sync_time=datetime.now(timezone.utc), last_event_time=current_batch_high_water)
                 await session.commit()
                 self.status = IngestionStatus.IDLE
 
@@ -259,48 +260,25 @@ class AlertIngestor:
                 self.status = IngestionStatus.FAILED
                 logger.error(f"Database error during sync: {e}")
                 # Record Error
-                await session.execute(
-                    update(ServiceState).values(
-                        current_status="failed"
-                    )
-                )
+                await update_service_state(session, current_status="failed", last_sync_time=datetime.now(timezone.utc))
                 await session.commit()
-                raise
+                raise  
             except Exception as e:
                 self.status = IngestionStatus.FAILED
                 logger.error(f"Unexpected error during sync: {e}")
                  # Record Error
-                await session.execute(
-                    update(ServiceState).values(
-                        current_status="failed"
-                    )
-                )
+                await update_service_state(session, current_status="failed", last_sync_time=datetime.now(timezone.utc))
                 await session.commit()
-                raise  
+                raise
             
-            logger.info(f"Synced {total_synced} alerts. Last Checkpoint: {latest_batch_time}")
+            logger.info(f"Synced {total_synced} alerts. Last Data Timestamp: {current_batch_high_water}")
 
-    async def _process_batch(
-        self, session: AsyncSession, alerts: List[dict], checkpoint_time: datetime
-    ):
+    async def _process_batch(self, session: AsyncSession, alerts: List[dict], last_event_time: datetime):
         """Helper to insert a batch and update state atomically."""
         try:
             # Upsert Alerts
-            stmt = insert(Alert)
-            do_nothing_stmt = stmt.on_conflict_do_nothing(index_elements=['id'])
-            await session.execute(do_nothing_stmt, alerts)
-            
-            # Update Checkpoint & Status
-            # We must re-fetch state or update it directly because previous transaction closed
-            # Upserting state is safer or just update the single row we know exists
-            await session.execute(
-                update(ServiceState).values(
-                    last_sync_time=checkpoint_time,
-                    last_success_time=datetime.now(timezone.utc),
-                    current_status="syncing"
-                )
-            )
-
+            await insert_alerts_batch(session, alerts)
+            await update_service_state(session, current_status="syncing", last_event_time=last_event_time)
             await session.commit()
         except SQLAlchemyError:
             await session.rollback()

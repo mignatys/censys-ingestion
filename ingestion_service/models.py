@@ -41,6 +41,7 @@ class ServiceState(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     last_sync_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True) # Checkpoint High-water mark
     last_success_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True) # Data High Water Mark (created_at of last alert)
     current_status: Mapped[str] = mapped_column(String, default="idle")
 
 class SystemConfig(Base):
