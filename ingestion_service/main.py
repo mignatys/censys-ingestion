@@ -112,6 +112,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
             response["last_sync"] = state.last_sync_time
             response["last_success"] = state.last_success_time
             response["last_event_time"] = state.last_event_time
+            response["last_error"] = state.last_error
             
             # DB State determines "system_status" unless in-memory is 'retrying' (transient visibility)
             if ingestor.status == IngestionStatus.RETRYING:

@@ -99,6 +99,7 @@ try:
     last_sync = health_data.get("last_sync", "Never")
     last_success = health_data.get("last_success", "Never")
     last_event = health_data.get("last_event_time", "Never")
+    last_error = health_data.get("last_error", None)
     db_status = health_data.get("db_status", "Unknown")
     system_status = health_data.get("system_status", "Unknown")
     
@@ -140,6 +141,10 @@ try:
 
     with col3:
         st.metric("Last Event Bookmark", str(last_event))
+
+    # Error Display
+    if last_error:
+        st.error(f"**Wait! Last Sync Error:**\n {last_error}")
 
 except Exception as e:
     st.error(f"Cannot reach Ingestion Service: {e}")

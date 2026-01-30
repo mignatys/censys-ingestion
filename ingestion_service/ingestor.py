@@ -252,7 +252,7 @@ class AlertIngestor:
 
                 # Update Final Success State
                 await update_service_state(session, current_status="idle", last_success_time=datetime.now(timezone.utc),
-                                           last_sync_time=datetime.now(timezone.utc), last_event_time=current_batch_high_water)
+                                           last_sync_time=datetime.now(timezone.utc), last_event_time=current_batch_high_water, last_error=None)
                 await session.commit()
                 self.status = IngestionStatus.IDLE
 
@@ -260,14 +260,14 @@ class AlertIngestor:
                 self.status = IngestionStatus.FAILED
                 logger.error(f"Database error during sync: {e}")
                 # Record Error
-                await update_service_state(session, current_status="failed", last_sync_time=datetime.now(timezone.utc))
+                await update_service_state(session, current_status="failed", last_sync_time=datetime.now(timezone.utc), last_error=str(e))
                 await session.commit()
                 raise  
             except Exception as e:
                 self.status = IngestionStatus.FAILED
                 logger.error(f"Unexpected error during sync: {e}")
                  # Record Error
-                await update_service_state(session, current_status="failed", last_sync_time=datetime.now(timezone.utc))
+                await update_service_state(session, current_status="failed", last_sync_time=datetime.now(timezone.utc), last_error=str(e))
                 await session.commit()
                 raise
             
