@@ -2,6 +2,8 @@
 
 ## Project Overview
 
+Demo: <a href='censys.miglabs.org'>censys.miglabs.org</a>
+
 This project is a resilient, containerized service designed to ingest, enrich, and store security alerts from a third-party API. It demonstrates robust error handling, database-driven configuration, and observability via a custom dashboard.
 
 > **Note:** For this demo, I took the liberty to modify the data returned by the Mock API to contain `src_ip` and `dst_ip` fields. This simulates a blocked connection from an internal network to an outside resource. We then enrich this data with **Geolocation** (of the destination IP) and **User Context** (based on source). This small change creates a more realistic security scenario for the demo.
