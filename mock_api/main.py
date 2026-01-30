@@ -41,6 +41,7 @@ current_config = Config()
 @app.post("/config")
 async def update_config(config: Config):
     """Update chaos engineering parameters."""
+    global current_config
     current_config = config
     return {"message": "Config updated", "config": current_config}
 

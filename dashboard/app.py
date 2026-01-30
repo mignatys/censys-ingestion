@@ -157,10 +157,6 @@ filter_user = st.sidebar.text_input("User ID")
 
 # --- Main Area ---
 
-# 1. Health Monitoring
-st.header("Service Health")
-col1, col2 = st.columns(2)
-
 # 2. Data Visualization
 st.header("Alerts Data")
 
