@@ -195,4 +195,4 @@ async def get_alerts(
         criticality=criticality
     )
     
-return alerts
+    return alerts
