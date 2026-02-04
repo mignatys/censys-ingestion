@@ -195,6 +195,4 @@ async def get_alerts(
         criticality=criticality
     )
     
-    # Helper to convert ORM objects to Pydantic (AlertEnriched expects 'id' but model has 'alert_id')
-    # Use list comprehension with mapping
-    return [AlertEnriched.model_validate(a) for a in alerts]
+return alerts

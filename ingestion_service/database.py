@@ -2,6 +2,12 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Any
+from sqlalchemy import select, update, delete, func, text
+from sqlalchemy.dialects.postgresql import insert
+from ingestion_service.models import SystemConfig, ServiceState, Alert
+
 # Default to a local connection string if env var not set
 # (useful for local dev/testing without docker)
 DATABASE_URL = os.getenv(
@@ -23,15 +29,8 @@ async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
 
+
 # --- DATA ACCESS LAYER ---
-
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Any
-from sqlalchemy import select, update, delete, func, text
-from sqlalchemy.dialects.postgresql import insert
-from ingestion_service.models import SystemConfig, ServiceState, Alert
-
-# --- Configuration ---
 
 async def get_system_config(session: AsyncSession) -> Optional[SystemConfig]:
     """Get the current system configuration."""
@@ -44,16 +43,14 @@ async def ensure_system_config(session: AsyncSession, default_interval: int = 30
     if not config:
         config = SystemConfig(sync_interval_minutes=default_interval)
         session.add(config)
-        await session.flush()
+        await session.commit()
+        await session.refresh(config)
     return config
 
 async def update_system_config(session: AsyncSession, sync_interval_minutes: int) -> SystemConfig:
     """Update system configuration."""
     config = await ensure_system_config(session)
     config.sync_interval_minutes = sync_interval_minutes
-    # session.commit() is left to the caller usually, but for single-purpose API we can commit
-    # However, to compose, we should probably return the object and let caller commit?
-    # User asked for "API for them... operations we are doing all the time".
     await session.commit()
     await session.refresh(config)
     return config
@@ -75,7 +72,8 @@ async def ensure_service_state(session: AsyncSession) -> ServiceState:
             current_status="idle"
         )
         session.add(state)
-        await session.flush()
+        await session.commit()
+        await session.refresh(state)
     return state
 
 async def update_service_state(session: AsyncSession, **kwargs):
